@@ -4,6 +4,6 @@
 
 An animated, step-by-step visualisation of what `kubeadm init` does when bootstrapping a Kubernetes control plane.
 
-[![Open kubeadm init animation](https://img.shields.io/badge/▶%20Open%20Demo-kubeadm%20init%20animated-blue?style=for-the-badge)](https://ashir321.github.io/scripts/kubeadm-init-animated.html)
+[![Open kubeadm init animation](https://img.shields.io/badge/%E2%96%B6%20Open%20Demo-kubeadm%20init%20animated-blue?style=for-the-badge)](https://ashir321.github.io/scripts/kubeadm-init-animated.html)
 
 > **Click the badge above** to open the live animated diagram in your browser.
