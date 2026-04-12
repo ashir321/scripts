@@ -1,0 +1,980 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>kubeadm init — Control Plane Bootstrap</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0e1a;
+    --surface: #111827;
+    --border: #1e2d45;
+    --blue: #3b82f6;
+    --blue-dim: #1d4ed8;
+    --cyan: #22d3ee;
+    --green: #10b981;
+    --amber: #f59e0b;
+    --red: #ef4444;
+    --text: #e2e8f0;
+    --muted: #64748b;
+    --glow-blue: 0 0 20px rgba(59,130,246,0.4);
+    --glow-green: 0 0 20px rgba(16,185,129,0.4);
+    --glow-amber: 0 0 20px rgba(245,158,11,0.4);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 40px 20px;
+    overflow-x: hidden;
+  }
+
+  /* Starfield bg */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      radial-gradient(1px 1px at 10% 15%, rgba(255,255,255,0.15) 0%, transparent 100%),
+      radial-gradient(1px 1px at 30% 60%, rgba(255,255,255,0.1) 0%, transparent 100%),
+      radial-gradient(1px 1px at 55% 25%, rgba(255,255,255,0.12) 0%, transparent 100%),
+      radial-gradient(1px 1px at 75% 80%, rgba(255,255,255,0.1) 0%, transparent 100%),
+      radial-gradient(1px 1px at 90% 45%, rgba(255,255,255,0.15) 0%, transparent 100%),
+      radial-gradient(1px 1px at 20% 90%, rgba(255,255,255,0.08) 0%, transparent 100%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  header {
+    text-align: center;
+    margin-bottom: 50px;
+    position: relative;
+    z-index: 1;
+  }
+
+  header h1 {
+    font-family: 'Syne', sans-serif;
+    font-size: clamp(1.8rem, 4vw, 3rem);
+    font-weight: 800;
+    background: linear-gradient(135deg, var(--cyan) 0%, var(--blue) 50%, #818cf8 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    letter-spacing: -1px;
+  }
+
+  header p {
+    color: var(--muted);
+    font-size: 0.78rem;
+    margin-top: 6px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  /* Main diagram container */
+  .diagram {
+    position: relative;
+    width: 100%;
+    max-width: 1100px;
+    z-index: 1;
+  }
+
+  /* SVG canvas for arrows */
+  .arrows-svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    overflow: visible;
+  }
+
+  /* Grid layout */
+  .grid {
+    display: grid;
+    grid-template-columns: 130px 1fr 1fr 280px;
+    grid-template-rows: repeat(6, auto);
+    gap: 16px 0;
+    align-items: center;
+  }
+
+  /* ---- NODES ---- */
+  .node {
+    opacity: 0;
+    transform: translateY(12px);
+    transition: opacity 0.5s ease, transform 0.5s ease, box-shadow 0.3s ease;
+  }
+  .node.visible { opacity: 1; transform: translateY(0); }
+
+  /* Kubeadm init trigger */
+  .trigger {
+    grid-column: 1;
+    grid-row: 1 / 4;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 16px 8px;
+  }
+
+  .k8s-logo {
+    width: 64px; height: 64px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #326ce5, #1a3a8f);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 28px;
+    box-shadow: var(--glow-blue), 0 0 40px rgba(50,108,229,0.2);
+    animation: pulse-logo 3s ease-in-out infinite;
+    position: relative;
+  }
+
+  @keyframes pulse-logo {
+    0%, 100% { box-shadow: var(--glow-blue), 0 0 40px rgba(50,108,229,0.2); }
+    50% { box-shadow: 0 0 30px rgba(59,130,246,0.7), 0 0 60px rgba(50,108,229,0.4); }
+  }
+
+  .trigger-label {
+    font-size: 0.7rem;
+    color: var(--cyan);
+    font-weight: 600;
+    letter-spacing: 1px;
+    text-align: center;
+  }
+
+  /* Step cards */
+  .step-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 16px;
+    position: relative;
+    cursor: default;
+    transition: border-color 0.3s, box-shadow 0.3s, transform 0.2s;
+    min-width: 190px;
+  }
+
+  .step-card:hover {
+    border-color: var(--blue);
+    box-shadow: var(--glow-blue);
+    transform: translateY(-2px);
+  }
+
+  .step-card.active {
+    border-color: var(--cyan);
+    box-shadow: 0 0 0 1px var(--cyan), var(--glow-blue);
+    animation: card-active 0.6s ease forwards;
+  }
+
+  @keyframes card-active {
+    0% { transform: scale(0.96); }
+    60% { transform: scale(1.02); }
+    100% { transform: scale(1); }
+  }
+
+  .step-card .step-icon {
+    font-size: 1rem;
+    margin-bottom: 4px;
+  }
+
+  .step-card .step-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1.3;
+  }
+
+  .step-card .step-desc {
+    font-size: 0.65rem;
+    color: var(--muted);
+    margin-top: 3px;
+  }
+
+  .check-badge {
+    position: absolute;
+    top: -8px; right: -8px;
+    width: 20px; height: 20px;
+    background: var(--green);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px;
+    opacity: 0;
+    transform: scale(0);
+    transition: opacity 0.3s, transform 0.3s;
+    box-shadow: var(--glow-green);
+  }
+
+  .check-badge.show {
+    opacity: 1;
+    transform: scale(1);
+    animation: badge-pop 0.4s cubic-bezier(0.34,1.56,0.64,1) forwards;
+  }
+
+  @keyframes badge-pop {
+    0% { transform: scale(0) rotate(-20deg); }
+    100% { transform: scale(1) rotate(0deg); }
+  }
+
+  /* Path/artifact nodes */
+  .artifact {
+    background: #0f1a2e;
+    border: 1px dashed #2a3f5f;
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-size: 0.72rem;
+    color: #7dd3fc;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 170px;
+    transition: border-color 0.3s, box-shadow 0.3s;
+  }
+
+  .artifact:hover {
+    border-color: var(--cyan);
+    box-shadow: 0 0 12px rgba(34,211,238,0.2);
+  }
+
+  .artifact::before {
+    content: '📁';
+    font-size: 0.9rem;
+  }
+
+  /* Control plane panel */
+  .cp-panel {
+    grid-column: 4;
+    grid-row: 1 / 6;
+    background: linear-gradient(135deg, #1a1200, #1f1500);
+    border: 2px solid var(--amber);
+    border-radius: 14px;
+    padding: 20px;
+    box-shadow: var(--glow-amber), inset 0 0 40px rgba(245,158,11,0.03);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    align-self: stretch;
+  }
+
+  .cp-panel-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--amber);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    border-bottom: 1px solid rgba(245,158,11,0.2);
+    padding-bottom: 10px;
+    text-align: center;
+  }
+
+  .cp-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    flex: 1;
+  }
+
+  .cp-component {
+    background: rgba(245,158,11,0.06);
+    border: 1px solid rgba(245,158,11,0.2);
+    border-radius: 8px;
+    padding: 14px 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    transition: border-color 0.3s, box-shadow 0.3s, transform 0.3s;
+    opacity: 0;
+    transform: scale(0.9);
+  }
+
+  .cp-component.visible {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  .cp-component:hover {
+    border-color: var(--amber);
+    box-shadow: 0 0 15px rgba(245,158,11,0.3);
+    transform: translateY(-3px);
+  }
+
+  .cp-icon {
+    width: 44px; height: 44px;
+    background: linear-gradient(135deg, #2a1f00, #3d2d00);
+    border: 1px solid rgba(245,158,11,0.3);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.3rem;
+    position: relative;
+  }
+
+  .cp-icon::after {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, rgba(245,158,11,0.2), transparent);
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+
+  .cp-component:hover .cp-icon::after { opacity: 1; }
+
+  .cp-name {
+    font-size: 0.65rem;
+    color: #fcd34d;
+    font-weight: 600;
+    text-align: center;
+    letter-spacing: 0.5px;
+  }
+
+  .cp-status {
+    font-size: 0.55rem;
+    color: var(--muted);
+  }
+
+  /* Progress bar */
+  .progress-bar-container {
+    width: 100%;
+    max-width: 1100px;
+    margin-bottom: 30px;
+    z-index: 1;
+  }
+
+  .progress-track {
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 10px;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--blue), var(--cyan));
+    border-radius: 2px;
+    width: 0%;
+    transition: width 0.5s ease;
+    box-shadow: 0 0 10px rgba(34,211,238,0.5);
+  }
+
+  .progress-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.65rem;
+    color: var(--muted);
+  }
+
+  /* Terminal log */
+  .terminal {
+    width: 100%;
+    max-width: 1100px;
+    margin-top: 30px;
+    background: #060b14;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    z-index: 1;
+  }
+
+  .terminal-header {
+    background: #0d1520;
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .t-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .t-red { background: #ef4444; }
+  .t-yellow { background: #f59e0b; }
+  .t-green { background: #10b981; }
+
+  .terminal-title {
+    font-size: 0.7rem;
+    color: var(--muted);
+    margin-left: 8px;
+    letter-spacing: 1px;
+  }
+
+  .terminal-body {
+    padding: 16px;
+    font-size: 0.72rem;
+    line-height: 1.8;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  .log-line {
+    opacity: 0;
+    transform: translateX(-6px);
+    transition: opacity 0.3s, transform 0.3s;
+    white-space: nowrap;
+  }
+
+  .log-line.show { opacity: 1; transform: translateX(0); }
+
+  .log-time { color: var(--muted); }
+  .log-info { color: var(--cyan); }
+  .log-success { color: var(--green); }
+  .log-warn { color: var(--amber); }
+  .log-step { color: #818cf8; }
+
+  /* SVG arrow styles */
+  .arrow-path {
+    fill: none;
+    stroke: var(--blue);
+    stroke-width: 1.5;
+    stroke-dasharray: 6 4;
+    opacity: 0;
+    animation: none;
+  }
+
+  .arrow-path.show {
+    opacity: 1;
+    animation: dash-flow 20s linear infinite;
+  }
+
+  @keyframes dash-flow {
+    to { stroke-dashoffset: -200; }
+  }
+
+  .arrow-solid {
+    fill: none;
+    stroke: var(--cyan);
+    stroke-width: 2;
+    opacity: 0;
+    transition: opacity 0.5s;
+  }
+
+  .arrow-solid.show { opacity: 1; }
+
+  /* replay btn */
+  .replay-btn {
+    margin-top: 30px;
+    padding: 10px 28px;
+    background: transparent;
+    border: 1px solid var(--blue);
+    border-radius: 6px;
+    color: var(--cyan);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    cursor: pointer;
+    letter-spacing: 1px;
+    transition: background 0.2s, box-shadow 0.2s;
+    z-index: 1;
+  }
+
+  .replay-btn:hover {
+    background: rgba(59,130,246,0.1);
+    box-shadow: var(--glow-blue);
+  }
+
+  /* Connector lines between columns */
+  .connector {
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--blue-dim), transparent);
+    opacity: 0;
+    transition: opacity 0.5s;
+    width: 100%;
+  }
+
+  .connector.show { opacity: 1; }
+
+  /* layout helpers */
+  .col2 { grid-column: 2; }
+  .col3 { grid-column: 3; padding-left: 30px; }
+  .col4 { grid-column: 4; }
+  .r1 { grid-row: 1; }
+  .r2 { grid-row: 2; }
+  .r3 { grid-row: 3; }
+  .r4 { grid-row: 4; }
+  .r5 { grid-row: 5; }
+  .r6 { grid-row: 6; }
+
+  /* arrows within grid using pseudo-elements via positioning */
+  .arrow-right {
+    display: flex;
+    align-items: center;
+    padding: 0 6px;
+    opacity: 0;
+    transition: opacity 0.5s;
+  }
+  .arrow-right.show { opacity: 1; }
+  .arrow-right::after {
+    content: '';
+    display: block;
+    width: 40px;
+    height: 2px;
+    background: linear-gradient(90deg, var(--blue-dim), var(--cyan));
+    position: relative;
+  }
+  .arrow-right::before {
+    content: '▶';
+    color: var(--cyan);
+    font-size: 0.7rem;
+    margin-left: -2px;
+    order: 2;
+  }
+
+  /* Kubelet special node */
+  .kubelet-node {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .kubelet-icon {
+    width: 40px; height: 40px;
+    background: radial-gradient(circle, #ef4444, #7f1d1d);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.2rem;
+    box-shadow: 0 0 15px rgba(239,68,68,0.4);
+    animation: kubelet-spin 8s linear infinite;
+  }
+
+  @keyframes kubelet-spin {
+    from { box-shadow: 0 0 15px rgba(239,68,68,0.4), 4px 0 0 rgba(239,68,68,0.2); }
+    50% { box-shadow: 0 0 25px rgba(239,68,68,0.6), -4px 0 0 rgba(239,68,68,0.2); }
+    to { box-shadow: 0 0 15px rgba(239,68,68,0.4), 4px 0 0 rgba(239,68,68,0.2); }
+  }
+
+  .kubelet-label {
+    font-size: 0.7rem;
+    color: #fca5a5;
+    font-weight: 600;
+  }
+
+  /* token node */
+  .token-card {
+    background: linear-gradient(135deg, #0a1a0a, #0d2e0d);
+    border: 1px solid #1a4a1a;
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-size: 0.72rem;
+    color: var(--green);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    transition: box-shadow 0.3s;
+  }
+
+  .token-card:hover { box-shadow: var(--glow-green); }
+
+  .token-card .token-icon {
+    font-size: 1.2rem;
+  }
+</style>
+</head>
+<body>
+
+<header class="node" id="header">
+  <h1>kubeadm init</h1>
+  <p>Control Plane Bootstrap Sequence</p>
+</header>
+
+<div class="progress-bar-container node" id="prog-bar">
+  <div class="progress-label">
+    <span id="prog-step">Initializing...</span>
+    <span id="prog-pct">0%</span>
+  </div>
+  <div class="progress-track">
+    <div class="progress-fill" id="pbar"></div>
+  </div>
+</div>
+
+<div class="diagram">
+  <div class="grid" id="main-grid">
+
+    <!-- Col 1: Trigger -->
+    <div class="node trigger" id="n-trigger">
+      <div class="k8s-logo">⎈</div>
+      <div class="trigger-label">kubeadm<br>init</div>
+    </div>
+
+    <!-- Row 1: Preflight -->
+    <div class="node step-card col2 r1" id="n-preflight">
+      <div class="step-icon">🔍</div>
+      <div class="step-title">Preflight Checks</div>
+      <div class="step-desc">Validates system requirements,<br>ports, and dependencies</div>
+      <div class="check-badge" id="chk-preflight">✓</div>
+    </div>
+
+    <div class="node artifact col3 r1" id="n-registry" style="padding-left:44px">
+      <span>registry.k8s.io</span>
+    </div>
+
+    <!-- Row 2: TLS Certs -->
+    <div class="node step-card col2 r2" id="n-tls">
+      <div class="step-icon">🔐</div>
+      <div class="step-title">Generate TLS Certs</div>
+      <div class="step-desc">CA, apiserver, etcd, front-proxy<br>certificates & keys</div>
+      <div class="check-badge" id="chk-tls">✓</div>
+    </div>
+
+    <div class="node artifact col3 r2" id="n-pki" style="padding-left:44px">
+      <span>/etc/kubernetes/pki</span>
+    </div>
+
+    <!-- Row 3: Kubeconfig -->
+    <div class="node step-card col2 r3" id="n-kubeconfig">
+      <div class="step-icon">📄</div>
+      <div class="step-title">Generate Kubeconfig</div>
+      <div class="step-desc">admin, controller-manager,<br>scheduler kubeconfig files</div>
+      <div class="check-badge" id="chk-kubeconfig">✓</div>
+    </div>
+
+    <div class="node artifact col3 r3" id="n-etckube" style="padding-left:44px">
+      <span>/etc/kubernetes</span>
+    </div>
+
+    <!-- Row 4: Kubelet + Manifests -->
+    <div class="node kubelet-node col2 r4" id="n-kubelet">
+      <div class="kubelet-icon">⚙</div>
+      <div class="kubelet-label">Kubelet<br>Static Pods</div>
+    </div>
+
+    <div class="node artifact col3 r4" id="n-manifests" style="padding-left:44px">
+      <span>/etc/kubernetes/manifests</span>
+    </div>
+
+    <!-- Row 5: CoreDNS + Bootstrap Token -->
+    <div class="node step-card col2 r5" id="n-coredns">
+      <div class="step-icon">🌐</div>
+      <div class="step-title">Deploy CoreDNS<br>& kube-proxy</div>
+      <div class="step-desc">Cluster DNS and network proxy<br>DaemonSet deployed</div>
+      <div class="check-badge" id="chk-coredns">✓</div>
+    </div>
+
+    <div class="node token-card col3 r5" id="n-token" style="margin-left:30px">
+      <div class="token-icon">🎟</div>
+      <div>
+        <div style="font-weight:700;font-size:0.75rem">Bootstrap Token</div>
+        <div style="font-size:0.6rem;color:#6ee7b7;margin-top:2px">Node join credential generated</div>
+      </div>
+      <div class="check-badge" id="chk-token">✓</div>
+    </div>
+
+    <!-- Col 4: Control Plane Panel -->
+    <div class="node cp-panel" id="n-cp">
+      <div class="cp-panel-title">⚡ Control Plane</div>
+      <div class="cp-grid">
+        <div class="cp-component" id="cp-api">
+          <div class="cp-icon">🖥</div>
+          <div class="cp-name">kube-apiserver</div>
+          <div class="cp-status">:6443</div>
+        </div>
+        <div class="cp-component" id="cp-etcd">
+          <div class="cp-icon">🗄</div>
+          <div class="cp-name">etcd</div>
+          <div class="cp-status">:2379</div>
+        </div>
+        <div class="cp-component" id="cp-sched">
+          <div class="cp-icon">📅</div>
+          <div class="cp-name">kube-scheduler</div>
+          <div class="cp-status">:10259</div>
+        </div>
+        <div class="cp-component" id="cp-ctrl">
+          <div class="cp-icon">🔄</div>
+          <div class="cp-name">controller-mgr</div>
+          <div class="cp-status">:10257</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+  <!-- SVG for flowing arrows -->
+  <svg class="arrows-svg" id="arrows-svg" viewBox="0 0 1100 580" preserveAspectRatio="none">
+    <defs>
+      <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+        <polygon points="0 0, 8 3, 0 6" fill="#22d3ee" opacity="0.8"/>
+      </marker>
+      <marker id="arrowhead-amber" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+        <polygon points="0 0, 8 3, 0 6" fill="#f59e0b" opacity="0.8"/>
+      </marker>
+      <filter id="glow">
+        <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+        <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+    </defs>
+
+    <!-- Trigger → Preflight (horizontal) -->
+    <path id="a-trigger-preflight" class="arrow-solid" d="M 130 80 L 190 80" marker-end="url(#arrowhead)" filter="url(#glow)" stroke="#22d3ee"/>
+
+    <!-- Preflight → TLS (vertical) -->
+    <path id="a-preflight-tls" class="arrow-path" d="M 310 120 Q 310 155 280 165" marker-end="url(#arrowhead)" stroke="#3b82f6"/>
+
+    <!-- TLS → Kubeconfig -->
+    <path id="a-tls-kubeconfig" class="arrow-path" d="M 310 215 Q 310 255 280 265" marker-end="url(#arrowhead)" stroke="#3b82f6"/>
+
+    <!-- Kubeconfig → Kubelet -->
+    <path id="a-kubeconfig-kubelet" class="arrow-path" d="M 310 315 Q 310 355 280 365" marker-end="url(#arrowhead)" stroke="#3b82f6"/>
+
+    <!-- Kubelet → CoreDNS -->
+    <path id="a-kubelet-coredns" class="arrow-path" d="M 310 405 Q 310 445 280 455" marker-end="url(#arrowhead)" stroke="#3b82f6"/>
+
+    <!-- Manifests → Control Plane -->
+    <path id="a-manifests-cp" class="arrow-solid" d="M 700 370 L 790 300" marker-end="url(#arrowhead-amber)" stroke="#f59e0b" stroke-width="2" filter="url(#glow)"/>
+
+    <!-- CoreDNS → Token -->
+    <path id="a-coredns-token" class="arrow-solid" d="M 430 470 L 510 470" marker-end="url(#arrowhead)" stroke="#22d3ee" filter="url(#glow)"/>
+  </svg>
+</div>
+
+<!-- Terminal Log -->
+<div class="terminal node" id="n-terminal">
+  <div class="terminal-header">
+    <div class="t-dot t-red"></div>
+    <div class="t-dot t-yellow"></div>
+    <div class="t-dot t-green"></div>
+    <span class="terminal-title">root@master-01 ~ kubeadm init --pod-network-cidr=10.244.0.0/16</span>
+  </div>
+  <div class="terminal-body" id="term-body">
+    <div class="log-line" id="log-0"><span class="log-time">[00:00:00]</span> <span class="log-step">[init]</span> Using Kubernetes version: v1.34.0</div>
+    <div class="log-line" id="log-1"><span class="log-time">[00:00:01]</span> <span class="log-info">[preflight]</span> Running pre-flight checks</div>
+    <div class="log-line" id="log-2"><span class="log-time">[00:00:02]</span> <span class="log-success">[preflight]</span> Pulling images required for setting up a Kubernetes cluster</div>
+    <div class="log-line" id="log-3"><span class="log-time">[00:00:05]</span> <span class="log-info">[certs]</span> Generating "ca" certificate and key</div>
+    <div class="log-line" id="log-4"><span class="log-time">[00:00:06]</span> <span class="log-success">[certs]</span> Generating "apiserver" certificate and key → /etc/kubernetes/pki/</div>
+    <div class="log-line" id="log-5"><span class="log-time">[00:00:07]</span> <span class="log-info">[kubeconfig]</span> Writing "admin.conf" kubeconfig file</div>
+    <div class="log-line" id="log-6"><span class="log-time">[00:00:08]</span> <span class="log-success">[kubeconfig]</span> Writing "controller-manager.conf" kubeconfig file</div>
+    <div class="log-line" id="log-7"><span class="log-time">[00:00:09]</span> <span class="log-info">[control-plane]</span> Creating static Pod manifest for "kube-apiserver"</div>
+    <div class="log-line" id="log-8"><span class="log-time">[00:00:10]</span> <span class="log-info">[control-plane]</span> Creating static Pod manifest for "etcd"</div>
+    <div class="log-line" id="log-9"><span class="log-time">[00:00:12]</span> <span class="log-warn">[wait-control-plane]</span> Waiting for control-plane to start...</div>
+    <div class="log-line" id="log-10"><span class="log-time">[00:00:18]</span> <span class="log-success">[apiclient]</span> All control plane components are healthy</div>
+    <div class="log-line" id="log-11"><span class="log-time">[00:00:19]</span> <span class="log-info">[addons]</span> Applying addon: CoreDNS</div>
+    <div class="log-line" id="log-12"><span class="log-time">[00:00:20]</span> <span class="log-info">[addons]</span> Applying addon: kube-proxy</div>
+    <div class="log-line" id="log-13"><span class="log-time">[00:00:21]</span> <span class="log-success">[bootstrap-token]</span> Creating the "cluster-info" ConfigMap in the "kube-public" namespace</div>
+    <div class="log-line" id="log-14"><span class="log-time">[00:00:22]</span> <span class="log-success">Your Kubernetes control-plane has initialized successfully! 🎉</span></div>
+  </div>
+</div>
+
+<button class="replay-btn node" id="n-replay" onclick="startAnimation()">↺ Replay Animation</button>
+
+<script>
+  const steps = [
+    // { delay_ms, element_ids_to_show, progress, step_label, logs, checks, cp_components }
+    {
+      delay: 0,
+      show: ['header','prog-bar','n-trigger','n-preflight','n-cp','n-terminal'],
+      arrows: [],
+      logs: [0],
+      checks: [],
+      cp: [],
+      progress: 5,
+      label: 'Starting kubeadm init...'
+    },
+    {
+      delay: 600,
+      show: [],
+      arrows: ['a-trigger-preflight'],
+      logs: [1],
+      checks: [],
+      cp: [],
+      progress: 15,
+      label: 'Preflight checks...'
+    },
+    {
+      delay: 1400,
+      show: ['n-registry'],
+      arrows: [],
+      logs: [2],
+      checks: ['preflight'],
+      cp: [],
+      progress: 25,
+      label: 'Pulling images from registry.k8s.io'
+    },
+    {
+      delay: 2400,
+      show: ['n-tls'],
+      arrows: ['a-preflight-tls'],
+      logs: [3],
+      checks: [],
+      cp: [],
+      progress: 35,
+      label: 'Generating TLS certificates...'
+    },
+    {
+      delay: 3200,
+      show: ['n-pki'],
+      arrows: [],
+      logs: [4],
+      checks: ['tls'],
+      cp: [],
+      progress: 45,
+      label: 'PKI directory created'
+    },
+    {
+      delay: 4200,
+      show: ['n-kubeconfig'],
+      arrows: ['a-tls-kubeconfig'],
+      logs: [5, 6],
+      checks: [],
+      cp: [],
+      progress: 55,
+      label: 'Generating kubeconfig files...'
+    },
+    {
+      delay: 5200,
+      show: ['n-etckube'],
+      arrows: [],
+      logs: [],
+      checks: ['kubeconfig'],
+      cp: [],
+      progress: 62,
+      label: '/etc/kubernetes populated'
+    },
+    {
+      delay: 6000,
+      show: ['n-kubelet', 'n-manifests'],
+      arrows: ['a-kubeconfig-kubelet'],
+      logs: [7, 8],
+      checks: [],
+      cp: [],
+      progress: 70,
+      label: 'Kubelet writing static pod manifests...'
+    },
+    {
+      delay: 7200,
+      show: [],
+      arrows: ['a-manifests-cp'],
+      logs: [9],
+      checks: [],
+      cp: ['cp-api', 'cp-etcd'],
+      progress: 78,
+      label: 'Control plane starting...'
+    },
+    {
+      delay: 8500,
+      show: [],
+      arrows: [],
+      logs: [10],
+      checks: [],
+      cp: ['cp-sched', 'cp-ctrl'],
+      progress: 87,
+      label: 'Scheduler & Controller Manager healthy'
+    },
+    {
+      delay: 9500,
+      show: ['n-coredns'],
+      arrows: ['a-kubelet-coredns'],
+      logs: [11, 12],
+      checks: [],
+      cp: [],
+      progress: 92,
+      label: 'Deploying CoreDNS & kube-proxy...'
+    },
+    {
+      delay: 10800,
+      show: ['n-token'],
+      arrows: ['a-coredns-token'],
+      logs: [13, 14],
+      checks: ['coredns', 'token'],
+      cp: [],
+      progress: 100,
+      label: '✓ Control plane initialized!'
+    },
+    {
+      delay: 11800,
+      show: ['n-replay'],
+      arrows: [],
+      logs: [],
+      checks: [],
+      cp: [],
+      progress: 100,
+      label: '✓ Bootstrap complete'
+    }
+  ];
+
+  let timers = [];
+
+  function resetAll() {
+    timers.forEach(t => clearTimeout(t));
+    timers = [];
+
+    document.querySelectorAll('.node').forEach(el => {
+      el.classList.remove('visible', 'active');
+    });
+    document.querySelectorAll('.check-badge').forEach(el => el.classList.remove('show'));
+    document.querySelectorAll('.arrow-solid, .arrow-path').forEach(el => el.classList.remove('show'));
+    document.querySelectorAll('.log-line').forEach(el => el.classList.remove('show'));
+    document.querySelectorAll('.cp-component').forEach(el => el.classList.remove('visible'));
+    document.getElementById('pbar').style.width = '0%';
+    document.getElementById('prog-step').textContent = 'Initializing...';
+    document.getElementById('prog-pct').textContent = '0%';
+  }
+
+  function startAnimation() {
+    resetAll();
+
+    steps.forEach(step => {
+      const t = setTimeout(() => {
+        // Show nodes
+        step.show.forEach(id => {
+          const el = document.getElementById(id);
+          if (el) {
+            el.classList.add('visible');
+            if (el.classList.contains('step-card')) el.classList.add('active');
+          }
+        });
+
+        // Show arrows
+        step.arrows.forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.classList.add('show');
+        });
+
+        // Show logs
+        step.logs.forEach(i => {
+          const el = document.getElementById('log-' + i);
+          if (el) {
+            el.classList.add('show');
+            const body = document.getElementById('term-body');
+            body.scrollTop = body.scrollHeight;
+          }
+        });
+
+        // Show check badges
+        step.checks.forEach(id => {
+          const el = document.getElementById('chk-' + id);
+          if (el) el.classList.add('show');
+        });
+
+        // Show CP components
+        step.cp.forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.classList.add('visible');
+        });
+
+        // Progress
+        document.getElementById('pbar').style.width = step.progress + '%';
+        document.getElementById('prog-pct').textContent = step.progress + '%';
+        document.getElementById('prog-step').textContent = step.label;
+
+      }, step.delay);
+
+      timers.push(t);
+    });
+  }
+
+  // Auto-start
+  window.addEventListener('load', () => {
+    setTimeout(startAnimation, 400);
+  });
+</script>
+</body>
+</html>
