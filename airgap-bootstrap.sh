@@ -135,7 +135,10 @@ check_access() {
 upload_bundle() {
   local host="$1"
   log "Uploading bundle to ${host}:${REMOTE_BUNDLE}"
-  remote_sudo "${host}" "rm -rf '${REMOTE_BUNDLE}' && mkdir -p '${REMOTE_BUNDLE}'"
+  # Clean up any root-owned remnant from a previous run, then create the
+  # directory as SSH_USER so that subsequent scp writes succeed.
+  remote_sudo "${host}" "rm -rf '${REMOTE_BUNDLE}'"
+  remote      "${host}" "mkdir -p '${REMOTE_BUNDLE}'"
   scp "${SSH_OPTS[@]}" -r \
     "${BUNDLE_DIR}/rpms" \
     "${host}:${REMOTE_BUNDLE}/"

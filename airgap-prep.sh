@@ -179,9 +179,11 @@ pull_k8s_images() {
   fi
 
   local images
+  # Strip leading 'v' and append '.0' patch — kubeadm expects e.g. "1.33.0"
+  local k8s_full_ver="${K8S_MINOR_VERSION#v}.0"
   # Try with explicit kubernetes-version, fall back to installed version
   if images="$(kubeadm config images list \
-      --kubernetes-version "${K8S_MINOR_VERSION}.0" 2>/dev/null)"; then
+      --kubernetes-version "${k8s_full_ver}" 2>/dev/null)"; then
     true
   elif images="$(kubeadm config images list 2>/dev/null)"; then
     true

@@ -225,7 +225,9 @@ load_longhorn_images_on_node() {
   log "Loading Longhorn images on ${host}"
 
   # Upload images directory if not already there from airgap-bootstrap.sh
-  remote_sudo "${host}" "mkdir -p '${REMOTE_BUNDLE}/images'"
+  # Use SSH_USER (not sudo) for mkdir so the directory is user-owned and
+  # scp can write into it.
+  remote "${host}" "mkdir -p '${REMOTE_BUNDLE}/images'"
   scp "${SSH_OPTS[@]}" -r \
     "${BUNDLE_DIR}/images" \
     "${host}:${REMOTE_BUNDLE}/"
@@ -261,8 +263,8 @@ load_longhorn_images_all_nodes() {
 install_longhorn_manifest() {
   log "Installing Longhorn ${LONGHORN_VERSION}"
 
-  # Upload manifests directory
-  remote_sudo "${CONTROL_PLANE_IP}" \
+  # Upload manifests directory — use SSH_USER for mkdir so scp can write there
+  remote "${CONTROL_PLANE_IP}" \
     "mkdir -p '${REMOTE_BUNDLE}/manifests'"
   scp "${SSH_OPTS[@]}" -r \
     "${BUNDLE_DIR}/manifests" \
