@@ -164,15 +164,19 @@ HTTP_PROXY="${1:-}"
 HTTPS_PROXY="${2:-}"
 NO_PROXY="${3:-}"
 
-# /etc/environment
-cat >/etc/environment <<ENV
-http_proxy=${HTTP_PROXY}
-https_proxy=${HTTPS_PROXY}
-no_proxy=${NO_PROXY}
-HTTP_PROXY=${HTTP_PROXY}
-HTTPS_PROXY=${HTTPS_PROXY}
-NO_PROXY=${NO_PROXY}
-ENV
+# /etc/environment — upsert proxy variables, leave other variables intact
+touch /etc/environment
+for pair in \
+    "http_proxy=${HTTP_PROXY}" \
+    "https_proxy=${HTTPS_PROXY}" \
+    "no_proxy=${NO_PROXY}" \
+    "HTTP_PROXY=${HTTP_PROXY}" \
+    "HTTPS_PROXY=${HTTPS_PROXY}" \
+    "NO_PROXY=${NO_PROXY}"; do
+  key="${pair%%=*}"
+  sed -i "/^${key}=/d" /etc/environment
+  echo "${pair}" >>/etc/environment
+done
 
 # systemd drop-ins for containerd and kubelet
 for service in containerd kubelet; do
@@ -201,9 +205,9 @@ set -euo pipefail
 
 # Clear /etc/environment proxy entries
 if [[ -f /etc/environment ]]; then
-  sed -i '/^[Hh][Tt][Tt][Pp]_[Pp][Rr][Oo][Xx][Yy]=/d
-          /^[Hh][Tt][Tt][Pp][Ss]_[Pp][Rr][Oo][Xx][Yy]=/d
-          /^[Nn][Oo]_[Pp][Rr][Oo][Xx][Yy]=/d' /etc/environment
+  sed -i '/^http_proxy=/Id
+          /^https_proxy=/Id
+          /^no_proxy=/Id' /etc/environment
 fi
 
 # Remove systemd drop-in proxy configs
@@ -247,7 +251,7 @@ for host in "${NODES[@]}"; do
       ssh "${SSH_OPTS[@]}" "${SSH_USER}@${host}" "sudo bash -s"
   else
     log "Applying proxy settings on ${host}"
-    # shellcheck disable=SC2029  # proxy URLs expand client-side intentionally
+    # shellcheck disable=SC2029
     apply_proxy_script | \
       ssh "${SSH_OPTS[@]}" "${SSH_USER}@${host}" \
         "sudo bash -s -- $(printf '%q' "${HTTP_PROXY}") $(printf '%q' "${HTTPS_PROXY}") $(printf '%q' "${NO_PROXY}")"
