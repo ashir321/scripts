@@ -1,0 +1,10 @@
+# Ignore large binary artifacts — these are populated by airgap-prep.sh
+# and are transferred out-of-band to the airgapped environment.
+rpms/**/*.rpm
+images/**/*.tar
+
+# Keep directory structure in git
+!rpms/containerd/.gitkeep
+!rpms/k8s/.gitkeep
+!rpms/utils/.gitkeep
+!images/.gitkeep
