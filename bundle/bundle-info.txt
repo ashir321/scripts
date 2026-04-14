@@ -1,0 +1,4 @@
+k8s_minor_version=v1.35
+longhorn_version=v1.11.1
+calico_url=https://raw.githubusercontent.com/projectcalico/calico/v3.31.4/manifests/calico.yaml
+created=2026-04-14T17:04:38Z
