@@ -144,7 +144,8 @@ pull_and_save() {
   local label="${2:-}"
   local safe_name
   # Replace / and : with __ for filename
-  safe_name="$(echo "${image}" | sed 's|[/:]|__|g')"
+  safe_name="${image//\//__}"
+  safe_name="${safe_name//:/__}"
   local out="${IMAGES_DIR}/${safe_name}.tar"
 
   if [[ -f "${out}" ]]; then
@@ -236,8 +237,9 @@ INFO
 
 generate_checksums() {
   log "Generating checksums → ${BUNDLE_DIR}/checksums.sha256"
-  find "${BUNDLE_DIR}" -type f ! -name 'checksums.sha256' \
-    -exec sha256sum {} + >"${BUNDLE_DIR}/checksums.sha256"
+  ( cd "${BUNDLE_DIR}" && \
+    find . -type f ! -name 'checksums.sha256' -exec sha256sum {} + \
+  ) >"${BUNDLE_DIR}/checksums.sha256"
 }
 
 # ---------------------------------------------------------------------------
