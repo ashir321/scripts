@@ -71,7 +71,6 @@ _register "exit"             "Exit the shell"
 # Current terminal width
 _cols() { tput cols 2>/dev/null || echo 80; }
 
-# Repeat character $2 exactly $1 times
 # Repeat string $2 exactly $1 times (loop-based to handle multi-byte UTF-8)
 _rep() {
     local n="${1:-0}" c="${2:--}"
@@ -331,6 +330,12 @@ dispatch() {
     shift || true
     local -a extra=("$@")
 
+    # Bare "/" shows the command list before we strip the slash.
+    if [[ "$raw" == "/" ]]; then
+        draw_commands
+        return 0
+    fi
+
     # Strip leading slash so both "/help" and "help" work.
     local name="${raw#/}"
 
@@ -345,11 +350,7 @@ dispatch() {
             exit 0
             ;;
         "")
-            # User pressed Enter on an empty line — show the prompt again.
-            # Typing just "/" also ends up here after stripping; show commands.
-            ;;
-        /)
-            draw_commands
+            # Empty input — do nothing, redisplay the prompt.
             ;;
         *)
             if [[ -n "${CMD_SCRIPT[$name]:-}" ]] \
@@ -390,7 +391,7 @@ main() {
     local line
     while true; do
         # read -e activates readline (history, cursor movement, TAB binding).
-        if ! IFS= read -r -e -p $'\033[38;5;208m\033[1m> \033[0m' line; then
+        if ! IFS= read -r -e -p "${OR}${BD}> ${R}" line; then
             # EOF (Ctrl-D)
             printf '%b\n\n' "\n  ${GY}Goodbye!${R}"
             exit 0
