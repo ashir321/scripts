@@ -1,0 +1,1003 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>kubectl apply — lifecycle trace</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;0,9..144,700;1,9..144,500&family=JetBrains+Mono:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0d12;
+    --bg-elev: #11151c;
+    --bg-card: #161b24;
+    --bg-card-active: #1c2330;
+    --border: #1f2630;
+    --border-dim: #2a3340;
+    --border-active: #3a4555;
+    --text: #c9d1d9;
+    --text-dim: #6e7681;
+    --text-faint: #484f58;
+    --cyan: #7dcfff;
+    --cyan-glow: rgba(125, 207, 255, 0.4);
+    --amber: #ffa657;
+    --amber-glow: rgba(255, 166, 87, 0.4);
+    --green: #56d364;
+    --green-glow: rgba(86, 211, 100, 0.4);
+    --red: #ff7b72;
+    --magenta: #d2a8ff;
+    --grid: rgba(255, 255, 255, 0.018);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 13px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    background-image:
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px),
+      radial-gradient(ellipse at top, rgba(125, 207, 255, 0.04), transparent 60%);
+    background-size: 32px 32px, 32px 32px, 100% 100%;
+    min-height: 100vh;
+    padding: 32px 28px 140px;
+  }
+
+  /* ─── Header ─────────────────────────────────────── */
+  header {
+    max-width: 1400px;
+    margin: 0 auto 24px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 24px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  h1 {
+    font-family: 'Fraunces', serif;
+    font-weight: 500;
+    font-size: 36px;
+    letter-spacing: -0.02em;
+    color: var(--text);
+    line-height: 1;
+  }
+  h1 em {
+    font-style: italic;
+    color: var(--cyan);
+    font-weight: 300;
+  }
+  .subtitle {
+    color: var(--text-dim);
+    font-size: 12px;
+    margin-top: 8px;
+    letter-spacing: 0.02em;
+  }
+  .meta {
+    display: flex;
+    gap: 18px;
+    align-items: center;
+    font-size: 11px;
+    color: var(--text-faint);
+  }
+  .meta .label { color: var(--text-faint); }
+  .meta .val { color: var(--text-dim); margin-left: 6px; }
+  .meta .dot {
+    display: inline-block;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green-glow);
+    margin-right: 6px;
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  /* ─── Terminal ─────────────────────────────────────── */
+  .terminal {
+    max-width: 1400px;
+    margin: 0 auto 28px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 14px 18px;
+    font-size: 13px;
+    position: relative;
+    overflow: hidden;
+  }
+  .terminal::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+    opacity: 0.5;
+  }
+  .terminal .tag {
+    color: var(--text-faint);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .terminal .cmd { color: var(--text); }
+  .terminal .prompt { color: var(--cyan); margin-right: 8px; }
+  .terminal .kw { color: var(--magenta); }
+  .terminal .flag { color: var(--amber); }
+  .terminal .str { color: var(--green); }
+  .terminal .cursor {
+    display: inline-block;
+    width: 8px;
+    height: 14px;
+    background: var(--cyan);
+    margin-left: 4px;
+    vertical-align: text-bottom;
+    animation: blink 1s steps(2) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* ─── Layout ─────────────────────────────────────── */
+  .container {
+    max-width: 1400px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+  }
+  @media (max-width: 980px) {
+    .container { grid-template-columns: 1fr; }
+  }
+
+  .phase {
+    position: relative;
+  }
+  .phase-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 14px;
+    padding-bottom: 10px;
+    border-bottom: 1px dashed var(--border);
+  }
+  .phase-title {
+    font-family: 'Fraunces', serif;
+    font-style: italic;
+    font-weight: 400;
+    font-size: 18px;
+    color: var(--text);
+  }
+  .phase-tag {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+  }
+  .phase-1 .phase-title em { color: var(--cyan); font-style: normal; }
+  .phase-2 .phase-title em { color: var(--green); font-style: normal; }
+
+  /* ─── Stage card ─────────────────────────────────── */
+  .stages {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    position: relative;
+  }
+  .stages::before {
+    content: '';
+    position: absolute;
+    left: 22px;
+    top: 28px;
+    bottom: 28px;
+    width: 1px;
+    background: var(--border-dim);
+    z-index: 0;
+  }
+  .stage {
+    display: grid;
+    grid-template-columns: 44px 1fr;
+    gap: 14px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 12px 14px;
+    position: relative;
+    transition: all 0.3s ease;
+    opacity: 0.55;
+  }
+  .stage.active {
+    background: var(--bg-card-active);
+    border-color: var(--border-active);
+    opacity: 1;
+    transform: translateX(2px);
+  }
+  .stage.done {
+    opacity: 0.85;
+    border-color: var(--border-dim);
+  }
+  .phase-1 .stage.active {
+    border-color: var(--cyan);
+    box-shadow: 0 0 0 1px var(--cyan), 0 0 24px -6px var(--cyan-glow);
+  }
+  .phase-2 .stage.active {
+    border-color: var(--green);
+    box-shadow: 0 0 0 1px var(--green), 0 0 24px -6px var(--green-glow);
+  }
+  .stage.active::before {
+    content: '';
+    position: absolute;
+    left: -1px; top: -1px; bottom: -1px;
+    width: 3px;
+    border-radius: 4px 0 0 4px;
+  }
+  .phase-1 .stage.active::before { background: var(--cyan); }
+  .phase-2 .stage.active::before { background: var(--green); }
+
+  .stage-num {
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--border-active);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-dim);
+    background: var(--bg);
+    position: relative;
+    z-index: 1;
+    transition: all 0.3s ease;
+  }
+  .stage.active .stage-num {
+    color: var(--bg);
+    font-weight: 700;
+  }
+  .phase-1 .stage.active .stage-num {
+    background: var(--cyan);
+    border-color: var(--cyan);
+    box-shadow: 0 0 16px var(--cyan-glow);
+  }
+  .phase-2 .stage.active .stage-num {
+    background: var(--green);
+    border-color: var(--green);
+    box-shadow: 0 0 16px var(--green-glow);
+  }
+  .stage.done .stage-num::after {
+    content: '✓';
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    color: var(--text-dim);
+    border-radius: 50%;
+    font-size: 12px;
+  }
+  .phase-1 .stage.done .stage-num::after { color: var(--cyan); }
+  .phase-2 .stage.done .stage-num::after { color: var(--green); }
+
+  .stage-body { min-width: 0; }
+  .stage-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 4px;
+  }
+  .stage-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+    letter-spacing: -0.01em;
+  }
+  .stage-actor {
+    font-size: 10px;
+    color: var(--amber);
+    background: rgba(255, 166, 87, 0.08);
+    padding: 2px 6px;
+    border-radius: 2px;
+    border: 1px solid rgba(255, 166, 87, 0.2);
+    white-space: nowrap;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+  }
+  .stage-summary {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+    line-height: 1.5;
+  }
+  .stage-details {
+    list-style: none;
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.4s ease, margin-top 0.3s ease;
+  }
+  .stage.active .stage-details,
+  .stage.done .stage-details {
+    max-height: 240px;
+    margin-top: 6px;
+  }
+  .stage-details li {
+    font-size: 11px;
+    color: var(--text-dim);
+    padding: 2px 0 2px 16px;
+    position: relative;
+    line-height: 1.6;
+  }
+  .stage-details li::before {
+    content: '›';
+    position: absolute;
+    left: 4px;
+    color: var(--text-faint);
+  }
+  .phase-1 .stage.active .stage-details li::before { color: var(--cyan); }
+  .phase-2 .stage.active .stage-details li::before { color: var(--green); }
+  .stage-details code {
+    color: var(--magenta);
+    background: rgba(210, 168, 255, 0.08);
+    padding: 0 4px;
+    border-radius: 2px;
+    font-size: 10.5px;
+  }
+
+  .stage-latency {
+    font-size: 10px;
+    color: var(--text-faint);
+    margin-top: 6px;
+    font-variant-numeric: tabular-nums;
+  }
+  .stage.active .stage-latency,
+  .stage.done .stage-latency {
+    color: var(--text-dim);
+  }
+
+  /* ─── Phase 1 → Phase 2 transition arrow ───────── */
+  .transition {
+    grid-column: 1 / -1;
+    text-align: center;
+    color: var(--text-faint);
+    font-size: 11px;
+    padding: 20px 0 8px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    display: none;
+  }
+  @media (max-width: 980px) {
+    .transition { display: block; }
+  }
+
+  /* ─── Control bar ─────────────────────────────────── */
+  .controls {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg-elev);
+    border: 1px solid var(--border-active);
+    border-radius: 6px;
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(125, 207, 255, 0.05);
+    z-index: 100;
+    backdrop-filter: blur(8px);
+  }
+  .ctrl-btn {
+    background: var(--bg-card);
+    border: 1px solid var(--border-active);
+    color: var(--text);
+    padding: 7px 12px;
+    border-radius: 3px;
+    font-family: inherit;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    letter-spacing: 0.04em;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .ctrl-btn:hover {
+    border-color: var(--cyan);
+    color: var(--cyan);
+  }
+  .ctrl-btn.primary {
+    background: var(--cyan);
+    color: var(--bg);
+    border-color: var(--cyan);
+    font-weight: 500;
+  }
+  .ctrl-btn.primary:hover {
+    background: var(--text);
+    border-color: var(--text);
+    color: var(--bg);
+  }
+  .ctrl-divider {
+    width: 1px;
+    height: 20px;
+    background: var(--border);
+  }
+  .ctrl-speed {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+  .ctrl-speed input {
+    width: 80px;
+    accent-color: var(--cyan);
+  }
+  .ctrl-status {
+    font-size: 11px;
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+    min-width: 110px;
+  }
+  .ctrl-status .step { color: var(--cyan); }
+  .ctrl-status .total { color: var(--text-faint); }
+  .ctrl-status .elapsed { color: var(--text-dim); margin-left: 8px; }
+
+  /* ─── Progress bar at top of cards ─────────────── */
+  .progress-bar {
+    max-width: 1400px;
+    margin: 0 auto 20px;
+    height: 2px;
+    background: var(--border);
+    border-radius: 1px;
+    overflow: hidden;
+    position: relative;
+  }
+  .progress-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, var(--cyan), var(--green));
+    transition: width 0.3s ease;
+    box-shadow: 0 0 12px var(--cyan-glow);
+  }
+
+  /* ─── Legend ─────────────────────────────────────── */
+  .legend {
+    max-width: 1400px;
+    margin: 32px auto 0;
+    padding: 16px 18px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 11px;
+    color: var(--text-dim);
+    line-height: 1.7;
+  }
+  .legend .lh {
+    font-family: 'Fraunces', serif;
+    font-style: italic;
+    color: var(--text);
+    font-size: 13px;
+    margin-bottom: 8px;
+    display: block;
+  }
+  .legend code {
+    color: var(--magenta);
+    background: rgba(210, 168, 255, 0.08);
+    padding: 1px 5px;
+    border-radius: 2px;
+    font-size: 10.5px;
+  }
+  .legend strong { color: var(--cyan); font-weight: 500; }
+  .legend .async { color: var(--green); }
+
+  /* ─── Scrollbar ──────────────────────────────────── */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border-dim); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--border-active); }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1><em>kubectl apply</em> — lifecycle trace</h1>
+    <div class="subtitle">request path from client → admission → persistence → reconciliation</div>
+  </div>
+  <div class="meta">
+    <div><span class="dot"></span><span class="label">trace</span><span class="val" id="trace-id">t.7f3a9c2b</span></div>
+    <div><span class="label">k8s</span><span class="val">v1.30</span></div>
+    <div><span class="label">obj</span><span class="val">Deployment/api-svc</span></div>
+  </div>
+</header>
+
+<div class="terminal">
+  <div class="tag">stdin</div>
+  <div class="cmd">
+    <span class="prompt">$</span><span class="kw">kubectl</span> apply <span class="flag">-f</span> <span class="str">deployment.yaml</span> <span class="flag">--server-side</span> <span class="cursor"></span>
+  </div>
+</div>
+
+<div class="progress-bar"><div class="progress-fill" id="progress"></div></div>
+
+<div class="container">
+
+  <!-- ═════════════════ PHASE 1 ═════════════════ -->
+  <section class="phase phase-1">
+    <div class="phase-header">
+      <div class="phase-title">phase i — <em>synchronous admission</em></div>
+      <div class="phase-tag">request blocks until done</div>
+    </div>
+
+    <div class="stages" id="phase1-stages">
+
+      <div class="stage" data-id="1">
+        <div class="stage-num">01</div>
+        <div class="stage-body">
+          <div class="stage-head">
+            <div class="stage-title">Client preflight</div>
+            <div class="stage-actor">kubectl</div>
+          </div>
+          <div class="stage-summary">Parse manifest, resolve auth, build server-side patch</div>
+          <ul class="stage-details">
+            <li>Load <code>~/.kube/config</code> → current-context user/cluster</li>
+            <li>Resolve credential plugin (x509 / exec / oidc / sa-token)</li>
+            <li>Discovery: <code>GET /api</code>, <code>/apis</code> → cached locally</li>
+            <li>Map <code>kind: Deployment</code> → <code>apps/v1/deployments</code></li>
+            <li>Compute strategic merge patch vs <code>last-applied-configuration</code></li>
+          </ul>
+          <div class="stage-latency">est. ~ 8–40 ms · local</div>
+        </div>
+      </div>
+
+      <div class="stage" data-id="2">
+        <div class="stage-num">02</div>
+        <div class="stage-body">
+          <div class="stage-head">
+            <div class="stage-title">TLS handshake → API server</div>
+            <div class="stage-actor">network</div>
+          </div>
+          <div class="stage-summary">mTLS to <code>kube-apiserver</code> on :6443</div>
+          <ul class="stage-details">
+            <li>Verify server cert chain against cluster CA</li>
+            <li>Present client cert / bearer token / SA JWT</li>
+            <li>HTTP/2 stream multiplexing established</li>
+            <li>Request: <code>PATCH /apis/apps/v1/namespaces/prod/deployments/api-svc</code></li>
+          </ul>
+          <div class="stage-latency">est. ~ 2–10 ms · network rtt</div>
+        </div>
+      </div>
+
+      <div class="stage" data-id="3">
+        <div class="stage-num">03</div>
+        <div class="stage-body">
+          <div class="stage-head">
+            <div class="stage-title">Authentication</div>
+            <div class="stage-actor">apiserver</div>
+          </div>
+          <div class="stage-summary">First authenticator that succeeds wins</div>
+          <ul class="stage-details">
+            <li>x509 → CN = user, O = group(s)</li>
+            <li>ServiceAccount JWT → projected, bound, audience-scoped</li>
+            <li>OIDC id_token → issuer + signature verification</li>
+            <li>Webhook <code>TokenReview</code> (e.g. aws-iam-authenticator)</li>
+            <li>Output: <code>user.Info{name, uid, groups, extra}</code></li>
+          </ul>
+          <div class="stage-latency">est. ~ 1–5 ms · in-proc</div>
+        </div>
+      </div>
+
+      <div class="stage" data-id="4">
+        <div class="stage-num">04</div>
+        <div class="stage-body">
+          <div class="stage-head">
+            <div class="stage-title">Authorization</div>
+            <div class="stage-actor">RBAC + Node</div>
+          </div>
+          <div class="stage-summary">Verb × resource × namespace against bindings</div>
+          <ul class="stage-details">
+            <li>Authorizer chain: <code>Node</code> → <code>RBAC</code> → <code>Webhook</code></li>
+            <li>Match <code>(user, groups) × (patch, deployments, prod)</code></li>
+            <li>First explicit allow wins; default deny</li>
+            <li>Reject → <code>403 Forbidden</code>, no further processing</li>
+          </ul>
+          <div class="stage-latency">est. ~ 0.5–3 ms · in-proc</div>
+        </div>
+      </div>
+
+      <div class="stage" data-id="5">
+        <div class="stage-num">05</div>
+        <div class="stage-body">
+          <div class="stage-head">
+            <div class="stage-title">Mutating admission</div>
+            <div class="stage-actor">in-tree + webhooks</div>
+          </div>
+          <div class="stage-summary">Object is rewritten — defaults, sidecars, labels</div>
+          <ul class="stage-details">
+            <li>In-tree: <code>ServiceAccount</code>, <code>DefaultStorageClass</code>, <code>LimitRanger</code>, <code>Priority</code></li>
+            <li>External: <code>MutatingWebhookConfiguration</code> → AdmissionReview v1</li>
+            <li>Examples: Istio sidecar inject, vault-agent, image-tag pinning</li>
+            <li>Runs <strong>serially</strong> — each sees prior mutation</li>
+            <li><code>failurePolicy: Fail</code> + dead webhook = full outage</li>
+          </ul>
+          <div class="stage-latency">est. ~ 5–80 ms · per webhook hop</div>
+        </div>
+      </div>
+
+      <div class="stage" data-id="6">
+        <div class="stage-num">06</div>
+        <div class="stage-body">
+          <div class="stage-head">
+            <div class="stage-title">Schema validation</div>
+            <div class="stage-actor">apiserver</div>
+          </div>
+          <div class="stage-summary">Structural check against OpenAPI / CRD schema</div>
+          <ul class="stage-details">
+            <li>Built-in types: compiled OpenAPI v3 schema</li>
+            <li>CRDs: <code>spec.versions[].schema.openAPIV3Schema</code></li>
+            <li>Unknown fields → reject in <code>--strict</code> mode</li>
+            <li>Type coercion, required fields, enum constraints</li>
+          </ul>
+          <div class="stage-latency">est. ~ 1–5 ms · in-proc</div>
+        </div>
+      </div>
+
+      <div class="stage" data-id="7">
+        <div class="stage-num">07</div>
+        <div class="stage-body">
+          <div class="stage-head">
+            <div class="stage-title">Validating admission</div>
+            <div class="stage-actor">webhooks + CEL</div>
+          </div>
+          <div class="stage-summary">Last gate — accept or reject. No mutation allowed.</div>
+          <ul class="stage-details">
+            <li>In-tree: <code>ResourceQuota</code>, <code>PodSecurity</code>, <code>CertificateSubjectRestriction</code></li>
+            <li><code>ValidatingWebhookConfiguration</code> — Kyverno, OPA Gatekeeper</li>
+            <li><code>ValidatingAdmissionPolicy</code> (GA 1.30) — in-process CEL, no webhook hop</li>
+            <li>Runs in parallel; any reject fails the request</li>
+          </ul>
+          <div class="stage-latency">est. ~ 3–50 ms · per webhook</div>
+        </div>
+      </div>
+
+      <div class="stage" data-id="8">
+        <div class="stage-num">08</div>
+        <div class="stage-body">
+          <div class="stage-head">
+            <div class="stage-title">Persist to etcd</div>
+            <div class="stage-actor">etcd quorum</div>
+          </div>
+          <div class="stage-summary">Encoded, encrypted at rest, replicated via Raft</div>
+          <ul class="stage-details">
+            <li>Serialize: protobuf (built-ins) / JSON (some CRDs)</li>
+            <li>Encrypt: KMS / aescbc / aesgcm if <code>EncryptionConfiguration</code> set</li>
+            <li>Key: <code>/registry/deployments/prod/api-svc</code></li>
+            <li>Server assigns <code>resourceVersion</code> = etcd ModRevision</li>
+            <li>Raft quorum write across etcd peers</li>
+          </ul>
+          <div class="stage-latency">est. ~ 5–25 ms · disk + quorum</div>
+        </div>
+      </div>
+
+      <div class="stage" data-id="9">
+        <div class="stage-num">09</div>
+        <div class="stage-body">
+          <div class="stage-head">
+            <div class="stage-title">Response to client</div>
+            <div class="stage-actor">apiserver</div>
+          </div>
+          <div class="stage-summary"><code>200 OK</code> with persisted object — apply is "done"</div>
+          <ul class="stage-details">
+            <li>Return body = object as committed (post-mutation)</li>
+            <li><code>kubectl</code> prints <code>deployment.apps/api-svc configured</code></li>
+            <li>Nothing is running yet — only state is recorded</li>
+            <li>Watch events fire to all interested controllers</li>
+          </ul>
+          <div class="stage-latency">est. ~ &lt; 1 ms · response</div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ═════════════════ PHASE 2 ═════════════════ -->
+  <section class="phase phase-2">
+    <div class="phase-header">
+      <div class="phase-title">phase ii — <em>async reconciliation</em></div>
+      <div class="phase-tag">watch-driven, level-triggered</div>
+    </div>
+
+    <div class="stages" id="phase2-stages">
+
+      <div class="stage" data-id="10">
+        <div class="stage-num">10</div>
+        <div class="stage-body">
+          <div class="stage-head">
+            <div class="stage-title">Deployment controller</div>
+            <div class="stage-actor">kube-controller-mgr</div>
+          </div>
+          <div class="stage-summary">Watch fires → reconcile loop creates a ReplicaSet</div>
+          <ul class="stage-details">
+            <li>Informer cache hit → enqueue work item</li>
+            <li>Diff current vs desired replicas</li>
+            <li>Strategy: <code>RollingUpdate</code> with maxSurge / maxUnavailable</li>
+            <li>POST new <code>ReplicaSet</code> with pod-template-hash</li>
+          </ul>
+          <div class="stage-latency">est. ~ 50–200 ms · reconcile</div>
+        </div>
+      </div>
+
+      <div class="stage" data-id="11">
+        <div class="stage-num">11</div>
+        <div class="stage-body">
+          <div class="stage-head">
+            <div class="stage-title">ReplicaSet controller</div>
+            <div class="stage-actor">kube-controller-mgr</div>
+          </div>
+          <div class="stage-summary">Creates N Pod objects — all <code>phase: Pending</code>, no node</div>
+          <ul class="stage-details">
+            <li>Diff <code>spec.replicas</code> vs live pod count for the RS</li>
+            <li>Burst-create pods (parallel POST) with owner refs</li>
+            <li>Pods enter etcd with <code>nodeName: ""</code></li>
+            <li>Status: <code>Pending / PodScheduled=False</code></li>
+          </ul>
+          <div class="stage-latency">est. ~ 100–300 ms · burst</div>
+        </div>
+      </div>
+
+      <div class="stage" data-id="12">
+        <div class="stage-num">12</div>
+        <div class="stage-body">
+          <div class="stage-head">
+            <div class="stage-title">Scheduler</div>
+            <div class="stage-actor">kube-scheduler</div>
+          </div>
+          <div class="stage-summary">Filter → score → reserve → bind</div>
+          <ul class="stage-details">
+            <li>Watches pods with empty <code>spec.nodeName</code></li>
+            <li>Filter plugins: <code>NodeAffinity</code>, <code>TaintToleration</code>, <code>NodeResourcesFit</code>, <code>VolumeBinding</code>, <code>PodTopologySpread</code></li>
+            <li>Score plugins: rank feasible nodes 0–100</li>
+            <li>Bind subresource: <code>POST .../binding</code> writes <code>nodeName</code></li>
+          </ul>
+          <div class="stage-latency">est. ~ 20–150 ms · per pod</div>
+        </div>
+      </div>
+
+      <div class="stage" data-id="13">
+        <div class="stage-num">13</div>
+        <div class="stage-body">
+          <div class="stage-head">
+            <div class="stage-title">kubelet admits pod</div>
+            <div class="stage-actor">kubelet · CRI · CNI · CSI</div>
+          </div>
+          <div class="stage-summary">Sandbox → network → volumes → containers</div>
+          <ul class="stage-details">
+            <li>kubelet watches pods where <code>spec.nodeName = self</code></li>
+            <li>Admit: eviction mgr, topology mgr, device plugins</li>
+            <li><strong>CRI</strong> → containerd creates <code>pause</code> sandbox + netns</li>
+            <li><strong>CNI</strong> → Calico/Cilium plumbs veth, IP, routes</li>
+            <li><strong>CSI</strong> → driver Attach + NodeStage + NodePublish</li>
+            <li>Image pull per <code>imagePullPolicy</code> → init containers → main</li>
+          </ul>
+          <div class="stage-latency">est. ~ 0.5–30 s · incl. image pull</div>
+        </div>
+      </div>
+
+      <div class="stage" data-id="14">
+        <div class="stage-num">14</div>
+        <div class="stage-body">
+          <div class="stage-head">
+            <div class="stage-title">Probes pass · status reported</div>
+            <div class="stage-actor">kubelet</div>
+          </div>
+          <div class="stage-summary">Pod transitions to <code>Running</code> → Ready → traffic</div>
+          <ul class="stage-details">
+            <li>Probes: startup → liveness + readiness loop</li>
+            <li>PATCH pod <code>status.conditions[Ready] = True</code></li>
+            <li>Endpoint controller adds pod IP to Service EndpointSlice</li>
+            <li>kube-proxy / Cilium programs iptables / IPVS / eBPF rules</li>
+            <li>Traffic now flowing to the new pod</li>
+          </ul>
+          <div class="stage-latency">est. ~ 1–60 s · until Ready</div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+</div>
+
+<div class="legend">
+  <span class="lh">two membranes</span>
+  Treat <code>kubectl apply</code> as crossing two distinct boundaries.
+  <strong>Membrane 1</strong> is synchronous and gate-keeping: authN → authZ → mutate → schema → validate → etcd. If <code>apply</code> itself fails, the cause lives here — almost always RBAC, a schema mismatch, or a webhook with <code>failurePolicy: Fail</code> hitting an unreachable backend.
+  <span class="async">Membrane 2</span> is asynchronous, level-triggered, and watch-driven: controllers + scheduler + kubelet drive actual state toward the spec just persisted. If <code>apply</code> returns success but nothing runs, the failure is here — scheduling pressure, image-pull errors, CNI/CSI failures, or runtime quota.
+</div>
+
+<div class="controls">
+  <button class="ctrl-btn primary" id="play">▶ play</button>
+  <button class="ctrl-btn" id="step">step ›</button>
+  <button class="ctrl-btn" id="reset">↻ reset</button>
+  <div class="ctrl-divider"></div>
+  <div class="ctrl-speed">
+    <span>speed</span>
+    <input type="range" id="speed" min="0.25" max="4" step="0.25" value="1">
+    <span id="speed-val">1.0×</span>
+  </div>
+  <div class="ctrl-divider"></div>
+  <div class="ctrl-status">
+    <span class="step" id="cur-step">00</span><span class="total">/14</span>
+    <span class="elapsed" id="elapsed">+0ms</span>
+  </div>
+</div>
+
+<script>
+(() => {
+  const stages = Array.from(document.querySelectorAll('.stage'));
+  const total = stages.length;
+  const progressEl = document.getElementById('progress');
+  const curStepEl = document.getElementById('cur-step');
+  const elapsedEl = document.getElementById('elapsed');
+  const playBtn = document.getElementById('play');
+  const stepBtn = document.getElementById('step');
+  const resetBtn = document.getElementById('reset');
+  const speedEl = document.getElementById('speed');
+  const speedValEl = document.getElementById('speed-val');
+
+  // Per-stage durations (ms at 1x). Tuned for readability, not realism.
+  const durations = [
+    1100, // 1 client
+    900,  // 2 tls
+    900,  // 3 authn
+    900,  // 4 authz
+    1500, // 5 mutating
+    900,  // 6 schema
+    1300, // 7 validating
+    1300, // 8 etcd
+    700,  // 9 response
+    1200, // 10 deployment
+    1200, // 11 replicaset
+    1400, // 12 scheduler
+    2000, // 13 kubelet
+    1500  // 14 ready
+  ];
+
+  let idx = 0;
+  let playing = false;
+  let timer = null;
+  let startTs = 0;
+  let elapsedAcc = 0;
+  let speed = 1;
+  let elapsedTimer = null;
+
+  function updateProgress() {
+    progressEl.style.width = (idx / total * 100) + '%';
+    curStepEl.textContent = String(idx).padStart(2, '0');
+  }
+
+  function fmtElapsed(ms) {
+    if (ms < 1000) return '+' + Math.round(ms) + 'ms';
+    return '+' + (ms / 1000).toFixed(2) + 's';
+  }
+
+  function startElapsedTicker() {
+    if (elapsedTimer) cancelAnimationFrame(elapsedTimer);
+    const tick = () => {
+      const now = performance.now();
+      const live = playing ? (now - startTs) : 0;
+      elapsedEl.textContent = fmtElapsed(elapsedAcc + live);
+      elapsedTimer = requestAnimationFrame(tick);
+    };
+    elapsedTimer = requestAnimationFrame(tick);
+  }
+
+  function activate(i) {
+    if (i >= total) {
+      playing = false;
+      playBtn.textContent = '▶ replay';
+      return;
+    }
+    // mark prior as done
+    for (let k = 0; k < i; k++) {
+      stages[k].classList.remove('active');
+      stages[k].classList.add('done');
+    }
+    // activate current
+    stages[i].classList.add('active');
+    stages[i].classList.remove('done');
+    // scroll into view if needed
+    const rect = stages[i].getBoundingClientRect();
+    if (rect.top < 80 || rect.bottom > window.innerHeight - 100) {
+      stages[i].scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    idx = i + 1;
+    updateProgress();
+  }
+
+  function scheduleNext() {
+    if (!playing) return;
+    if (idx >= total) {
+      playing = false;
+      playBtn.textContent = '▶ replay';
+      return;
+    }
+    const dur = durations[idx] / speed;
+    timer = setTimeout(() => {
+      activate(idx);
+      // accumulate elapsed
+      elapsedAcc += (performance.now() - startTs);
+      startTs = performance.now();
+      scheduleNext();
+    }, dur);
+  }
+
+  function play() {
+    if (idx >= total) reset();
+    playing = true;
+    playBtn.textContent = '⏸ pause';
+    startTs = performance.now();
+    if (idx === 0) {
+      activate(0);
+      elapsedAcc = 0;
+    }
+    scheduleNext();
+    startElapsedTicker();
+  }
+
+  function pause() {
+    playing = false;
+    playBtn.textContent = '▶ play';
+    if (timer) clearTimeout(timer);
+    elapsedAcc += (performance.now() - startTs);
+  }
+
+  function step() {
+    if (playing) pause();
+    if (idx >= total) return;
+    activate(idx);
+  }
+
+  function reset() {
+    if (timer) clearTimeout(timer);
+    playing = false;
+    idx = 0;
+    elapsedAcc = 0;
+    stages.forEach(s => s.classList.remove('active', 'done'));
+    updateProgress();
+    elapsedEl.textContent = '+0ms';
+    playBtn.textContent = '▶ play';
+  }
+
+  playBtn.addEventListener('click', () => {
+    if (playing) pause();
+    else play();
+  });
+  stepBtn.addEventListener('click', step);
+  resetBtn.addEventListener('click', reset);
+  speedEl.addEventListener('input', e => {
+    speed = parseFloat(e.target.value);
+    speedValEl.textContent = speed.toFixed(2).replace(/0$/, '') + '×';
+  });
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT') return;
+    if (e.key === ' ') { e.preventDefault(); playBtn.click(); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); step(); }
+    if (e.key === 'r' || e.key === 'R') { reset(); }
+  });
+
+  updateProgress();
+  startElapsedTicker();
+})();
+</script>
+
+</body>
+</html>
